@@ -59,7 +59,7 @@ resource "aws_security_group" "instance" {
 
 # Launch configurations to each instance created on the autoscaling group
 resource "aws_launch_configuration" "bob" {
-  image_id        = "ami-0c55b159cbfafe1f0"
+  image_id        = ["ami-0c55b159cbfafe1f0"]
   instance_type   = "t2.micro"
   security_groups = [aws_security_group.instance.id]
 
@@ -75,54 +75,12 @@ resource "aws_launch_configuration" "bob" {
   }
 }
 
-# The actual autoscaling group
-resource "aws_autoscaling_group" "bob" {
-  launch_configuration = aws_launch_configuration.bob.name
-  vpc_zone_identifier  = data.aws_subnet_ids.default.ids
-
-  target_group_arns = [aws_lb_target_group.asg.arn]
-  health_check_type = "ELB"
-
-  min_size = 2
-  max_size = 10
-
-  tag {
-    key                 = "Name"
-    value               = "terraform-asg-example"
-    propagate_at_launch = true
-  }
-}
 
 
 # Configuring load balancer
 # ---------------------------------------------------------------------
-
-resource "aws_lb" "example" {
-  # Not yet sure why it is asg instead of lb
-  name               = "terraform-asg-example"
-  load_balancer_type = "application"
-  subnets            = data.aws_subnet_ids.default.ids
-  security_groups    = [aws_security_group.alb.id]
-}
-
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.example.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type = "fixed-response"
-
-    fixed_response {
-      content_type = "text/plain"
-      message_body = "404: page not found"
-      status_code  = 404
-    }
-  }
-}
-
 # Setting up a security group because by default, all AWS resources, including ALBs, don't allow any incoming or outcoming traffic
-resource "aws_security_group" "alb" {
+resource "aws_security_group" "alb-default" {
   name = "terraform-example-alb"
 
   # Allow inbound HTTP requests
@@ -140,6 +98,30 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+}
+
+resource "aws_lb" "example" {
+  # Not yet sure why it is asg instead of lb
+  name               = "terraform-asg-example"
+  load_balancer_type = "application"
+  subnets            = data.aws_subnet_ids.default.ids
+  security_groups    = [aws_security_group.alb-default.id]
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.example.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "404: page not found"
+      status_code  = 404
+    }
+  }
 }
 
 
@@ -176,14 +158,29 @@ resource "aws_lb_listener_rule" "asg" {
   }
 
 }
-
-
 # ---------------------------------------------------------------------
 
+# The actual autoscaling group
+resource "aws_autoscaling_group" "bob" {
+  launch_configuration = aws_launch_configuration.bob.name
+  vpc_zone_identifier  = data.aws_subnet_ids.default.ids
 
+  target_group_arns = [aws_lb_target_group.asg.arn]
+  health_check_type = "ELB"
 
+  min_size = 2
+  max_size = 10
 
-output "alb_dns_name" {
-  value       = aws_lb.example.dns_name
-  description = "The domain name of the load balancer"
+  tag {
+    key                 = "Name"
+    value               = "terraform-asg-example"
+    propagate_at_launch = true
+  }
 }
+
+
+
+# output "alb_dns_name" {
+#   value       = aws_lb.example.dns_name
+#   description = "The domain name of the load balancer"
+# }
